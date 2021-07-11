@@ -1,0 +1,1 @@
+daml sandbox .daml/dist/htlcdamlerc20-0.0.1.dar --ledgerid demo

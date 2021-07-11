@@ -1,0 +1,121 @@
+module Htlc where
+
+import Daml.Script
+import DA.Time
+import DA.Text
+
+template Shares
+  with
+    exchange : Party
+    owner : Party
+    ticker : Text
+    quantity : Int
+  where
+    signatory exchange
+    key (exchange, ticker, owner) : (Party, Text, Party)
+    maintainer key._1
+    controller exchange can
+      IncreaseShares : ContractId Shares
+        with delta : Int
+        do create this with quantity = quantity + delta
+      DecreaseShares : ContractId Shares
+        with delta : Int
+        do create this with quantity = quantity - delta
+
+      nonconsuming Lock : ContractId Htlc
+        with
+          target : Party
+          quantityToBeLocked : Int
+          locktime : Int -- seconds
+          hashlock : Text -- computed outband
+        do
+          assert (quantityToBeLocked <= quantity)
+          exerciseByKey @Shares (exchange, ticker, owner) DecreaseShares with delta = quantityToBeLocked
+          currentTime <- getTime
+          let lockrealtime = addRelTime currentTime (seconds locktime) 
+          create Htlc with 
+            refunded = False
+            withdrawn = False
+            expiry = lockrealtime 
+            .. 
+          -- move qty to locked account
+
+template Htlc
+  with
+    exchange : Party
+    ticker : Text
+    owner : Party
+    target : Party
+    quantityToBeLocked : Int
+    expiry : Time -- getTime + x seconds
+    hashlock : Text
+    refunded : Bool
+    withdrawn : Bool
+  where
+    signatory exchange
+    controller exchange can
+      Refund : ContractId Shares
+        do
+          assertMsg "Already refunded" (not refunded)
+          assertMsg "Already withdrawn" (not withdrawn)
+          time <- getTime
+          assertMsg "Still locked" (time > expiry)
+          create this with refunded = True
+          exerciseByKey @Shares (exchange, ticker, owner) IncreaseShares with delta = quantityToBeLocked
+      Withdraw : ContractId Shares
+        with
+          secret : Text
+        do
+          assertMsg "Already refunded" (not refunded)
+          assertMsg "Already withdrawn" (not withdrawn)
+          time <- getTime
+          assertMsg "Expired" (time < expiry)
+          let hashcomputed = sha256 secret
+          assertMsg "Hash not matched" (hashlock == hashcomputed) 
+          create this with withdrawn = True
+          exerciseByKey @Shares (exchange, ticker, target) IncreaseShares with delta = quantityToBeLocked
+          
+
+
+test = script do
+  nasdaq <- allocateParty "NASDAQ"
+  alice <- allocateParty "Alice"
+  bob <- allocateParty "Bob"
+
+  let
+    secret = "abcdefgh"
+    hash = "9c56cc51b374c3ba189210d5b6d4bf57790d351c96c47c02190ecf1e430635ab"
+
+  submit nasdaq do
+    createCmd Shares with
+      exchange = nasdaq
+      owner = alice
+      ticker = "AAPL"
+      quantity = 100
+
+  submit nasdaq do
+    createCmd Shares with
+      exchange = nasdaq
+      owner = bob
+      ticker = "AAPL"
+      quantity = 0
+
+  lockrequest <- submit nasdaq do
+    exerciseByKeyCmd @Shares(nasdaq, "AAPL", alice) Lock with
+      target = bob
+      quantityToBeLocked = 20
+      locktime = 120 -- seconds
+      hashlock = hash
+
+  passTime (seconds 160)
+  submitMustFail nasdaq do
+    exerciseCmd lockrequest Withdraw with secret = secret
+
+  -- passTime (seconds 121)
+  -- submit nasdaq do
+  --   exerciseCmd lockrequest Refund
+    
+  pure()
+
+
+
