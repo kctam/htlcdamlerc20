@@ -1,7 +1,7 @@
 # htlcdamlerc20
 Hashed Timelock Contract (HTLC) demonstration for assets in daml ledger and ERC20 token.
 
-The HTLC used in this demonstration is from [here](https://github.com/chatch/hashed-timelock-contract-ethereum). Modification is done: type for preimage is changed from bytes32 to string.
+The HTLC (Solidity) used in this demonstration is from [here](https://github.com/chatch/hashed-timelock-contract-ethereum). Modification is made: the data type for preimage is changed from **bytes32** to **string**.
 
 ## Prerequisite
 * ganache-cli
@@ -34,7 +34,7 @@ Note: Use this mnemonic as the account information is hardcoded.
 Event listener
 ```
 cd demo-py3
-python3 e99_eventlistener.py
+python3 1b_launch_eventlistening.py
 ```
 
 ### Step 2: Deploy contracts and setup token balances for both Alice and Bob
